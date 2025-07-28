@@ -36,7 +36,6 @@ const OrderCard = ({ order, onAllocate, disabled = false }) => {
       disabled && styles.disabledCard 
     ]}>
       <Card.Content>
-        {/* Order Header */}
         <View style={styles.orderHeader}>
           <Text style={styles.orderId}>{order.id}</Text>
           <View style={styles.statusContainer}>
@@ -50,7 +49,6 @@ const OrderCard = ({ order, onAllocate, disabled = false }) => {
           </View>
         </View>
 
-        {/* Customer Info */}
         <View style={styles.row}>
           <Text style={styles.label}>Customer</Text>
           <Text style={styles.value}>{order.customer.name}</Text>

@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import {View, Text,FlatList,SafeAreaView, RefreshControl} from 'react-native';
+import {View, Text, FlatList, SafeAreaView, RefreshControl, Alert} from 'react-native';
 import { allocationScreenStyles as styles } from '../styles/sharedStyles';
 import { useDispatch, useSelector } from 'react-redux';
-import { Card, ProgressBar } from 'react-native-paper';
-import { loadMoreOrders, allocateToOrder, autoAllocate, resetAllocations } from '../store/store';
+import { Card, ProgressBar, Snackbar } from 'react-native-paper';
+import { loadMoreOrders, allocateToOrder, autoAllocate, resetAllocations, clearError } from '../store/store';
 import OrderCard from '../components/OrderCard';
 
 const getPriorityScore = (order) => {
@@ -32,10 +32,12 @@ const AllocationScreen = () => {
     totalStock,
     isLoading,
     hasMoreData,
-    versionKey
+    versionKey,
+    lastAllocationError
   } = useSelector(state => state.allocation);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [showErrorSnackbar, setShowErrorSnackbar] = useState(false);
 
   const totalAllocated = useMemo(() =>
     orders.reduce((sum, order) => sum + order.allocatedQty, 0),
@@ -50,6 +52,37 @@ const AllocationScreen = () => {
     });
   }, [orders]);
 
+  // Handle allocation errors
+  useEffect(() => {
+    if (lastAllocationError) {
+      setShowErrorSnackbar(true);
+      
+      if (lastAllocationError.type === 'CREDIT_LIMIT_EXCEEDED') {
+        Alert.alert(
+          'Credit Limit Exceeded',
+          `Customer ${lastAllocationError.customerName} has insufficient credit.\n\nAvailable: ${lastAllocationError.availableCredit.toFixed(2)}\nRequired: ${lastAllocationError.requiredCredit.toFixed(2)}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => dispatch(clearError())
+            }
+          ]
+        );
+      } else if (lastAllocationError.type === 'INSUFFICIENT_STOCK') {
+        Alert.alert(
+          'Insufficient Stock',
+          `Not enough stock available.\nAvailable: ${lastAllocationError.availableStock} units`,
+          [
+            {
+              text: 'OK', 
+              onPress: () => dispatch(clearError())
+            }
+          ]
+        );
+      }
+    }
+  }, [lastAllocationError, dispatch]);
+
   useEffect(() => {
     dispatch(loadMoreOrders());
     const timer = setTimeout(() => dispatch(autoAllocate()), 1000);
@@ -59,6 +92,9 @@ const AllocationScreen = () => {
   const handleLoadMore = useCallback(() => {
     if (!isLoading && hasMoreData && remainingStock > 0) {
       dispatch(loadMoreOrders());
+      setTimeout(() => {
+        dispatch(autoAllocate());
+      }, 100); 
     }
   }, [dispatch, isLoading, hasMoreData, remainingStock]);
 
@@ -71,15 +107,21 @@ const AllocationScreen = () => {
     }, 1000);
   }, [dispatch]);
 
+  const handleAllocate = useCallback((orderId, quantity) => {
+    // Clear previous errors
+    dispatch(clearError());
+    
+    // Perform allocation
+    dispatch(allocateToOrder({ orderId, quantity }));
+  }, [dispatch]);
+
   const renderOrderCard = useCallback(({ item, index }) => (
     <OrderCard
       order={item}
       index={index}
-      onAllocate={(quantity) =>
-        dispatch(allocateToOrder({ orderId: item.id, quantity }))
-      }
+      onAllocate={(quantity) => handleAllocate(item.id, quantity)}
     />
-  ), [dispatch]);
+  ), [handleAllocate]);
 
   const renderFooter = useCallback(() => {
     if (!isLoading) return null;
@@ -93,9 +135,13 @@ const AllocationScreen = () => {
 
   const keyExtractor = useCallback((item) => item.id, []);
 
+  const handleDismissSnackbar = useCallback(() => {
+    setShowErrorSnackbar(false);
+    dispatch(clearError());
+  }, [dispatch]);
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Enhanced Header Card */}
       <Card style={styles.headerCard}>
         <Card.Content>
           <View style={styles.headerRow}>
@@ -105,7 +151,6 @@ const AllocationScreen = () => {
             </View>
           </View>
 
-          {/* Stock Information */}
           <View style={styles.stockInfo}>
             <View style={styles.stockItem}>
               <Text style={styles.stockLabel}>Remaining</Text>
@@ -149,9 +194,18 @@ const AllocationScreen = () => {
           </Text>
         </View>
       )}
+
+      {/* Error Snackbar for less critical errors */}
+      <Snackbar
+        visible={showErrorSnackbar && lastAllocationError && lastAllocationError.type === 'ORDER_NOT_FOUND'}
+        onDismiss={handleDismissSnackbar}
+        duration={4000}
+        style={{ backgroundColor: '#F44336' }}
+      >
+        {lastAllocationError?.message}
+      </Snackbar>
     </SafeAreaView>
   );
 };
-
 
 export default AllocationScreen;
